@@ -1,0 +1,78 @@
+From e6aa2b2da7870b7478d8efec3801a7efd4093c31 Mon Sep 17 00:00:00 2001
+From: Cristian Gafton <gafton@amazon.com>
+Date: Thu, 16 Feb 2012 05:31:08 +0000
+Subject: httpd-2.2.15-pr45444.patch
+
+ modules/ssl/ssl_engine_io.c |   40 ++++++++++++++++++++++++++++++++++------
+ 1 files changed, 34 insertions(+), 6 deletions(-)
+  --- httpd-2.2.15/modules/ssl/ssl_engine_io.c.pr45444
+
+Signed-off-by: Cristian Gafton <gafton@amazon.com>
+---
+ modules/ssl/ssl_engine_io.c |   29 +++++++++++++++++++++++++----
+ 1 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/modules/ssl/ssl_engine_io.c b/modules/ssl/ssl_engine_io.c
+index e2d3390..ffc2ec1 100644
+--- a/modules/ssl/ssl_engine_io.c
++++ b/modules/ssl/ssl_engine_io.c
+@@ -729,6 +729,9 @@ static apr_status_t ssl_io_input_read(bio_filter_in_ctx_t *inctx,
+     return inctx->rc;
+ }
+ 
++/* Read a line of input from the SSL input layer into buffer BUF of
++ * length *LEN; updating *len to reflect the length of the line
++ * including the LF character. */
+ static apr_status_t ssl_io_input_getline(bio_filter_in_ctx_t *inctx,
+                                          char *buf,
+                                          apr_size_t *len)
+@@ -1330,8 +1333,8 @@ static apr_status_t ssl_io_filter_input(ap_filter_t *f,
+ {
+     apr_status_t status;
+     bio_filter_in_ctx_t *inctx = f->ctx;
+-
+-    apr_size_t len = sizeof(inctx->buffer);
++    const char *start = inctx->buffer; /* start of block to return */
++    apr_size_t len = sizeof(inctx->buffer); /* length of block to return */
+     int is_init = (mode == AP_MODE_INIT);
+ 
+     if (f->c->aborted) {
+@@ -1383,7 +1386,25 @@ static apr_status_t ssl_io_filter_input(ap_filter_t *f,
+         status = ssl_io_input_read(inctx, inctx->buffer, &len);
+     }
+     else if (inctx->mode == AP_MODE_GETLINE) {
+-        status = ssl_io_input_getline(inctx, inctx->buffer, &len);
++        const char *pos;
++
++        /* Satisfy the read directly out of the buffer if possible;
++         * invoking ssl_io_input_getline will mean the entire buffer
++         * is copied once (unnecessarily) for each GETLINE call. */
++        if (inctx->cbuf.length 
++            && (pos = memchr(inctx->cbuf.value, APR_ASCII_LF, 
++                             inctx->cbuf.length)) != NULL) {
++            start = inctx->cbuf.value;
++            len = 1 + pos - start; /* +1 to include LF */
++            /* Buffer contents now consumed. */
++            inctx->cbuf.value += len;
++            inctx->cbuf.length -= len;
++            status = APR_SUCCESS;
++        }
++        else {
++            /* Otherwise fall back to the hard way. */
++            status = ssl_io_input_getline(inctx, inctx->buffer, &len);
++        }
+     }
+     else {
+         /* We have no idea what you are talking about, so return an error. */
+@@ -1405,7 +1426,7 @@ static apr_status_t ssl_io_filter_input(ap_filter_t *f,
+     /* Create a transient bucket out of the decrypted data. */
+     if (len > 0) {
+         apr_bucket *bucket =
+-            apr_bucket_transient_create(inctx->buffer, len, f->c->bucket_alloc);
++            apr_bucket_transient_create(start, len, f->c->bucket_alloc);
+         APR_BRIGADE_INSERT_TAIL(bb, bucket);
+     }
+ 
+-- 
+1.7.4.5
+

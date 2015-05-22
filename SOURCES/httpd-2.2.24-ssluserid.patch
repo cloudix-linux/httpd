@@ -1,0 +1,12 @@
+diff -up httpd-2.2.24/modules/ssl/ssl_engine_vars.c.ssluserid httpd-2.2.24/modules/ssl/ssl_engine_vars.c
+--- httpd-2.2.24/modules/ssl/ssl_engine_vars.c.ssluserid	2013-02-12 11:51:17.000000000 +0000
++++ httpd-2.2.24/modules/ssl/ssl_engine_vars.c	2013-03-22 23:56:46.000000000 +0000
+@@ -432,6 +432,8 @@ static const struct {
+     { "D",     NID_description,            1 },
+ #ifdef NID_userId
+     { "UID",   NID_userId,                 1 },
++    /* compatibility with old versions of the ssl userID patch */
++    { "userID", NID_userId,                1 },
+ #endif
+     { "Email", NID_pkcs9_emailAddress,     1 },
+     { NULL,    0,                          0 }
